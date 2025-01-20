@@ -1,0 +1,26 @@
+{
+    "baseDir": ["."],
+    "license": {
+        "publisher": "Meta Platforms, Inc. and affiliate",
+        "license_name": "MIT",
+        "license_location": "root directory"
+    },
+    "includes": [".tsx", ".ts", ".js", ".jsx"],
+    "target": [
+        "function", 
+        "arrow_function", 
+        "global_var",
+        "import",
+        "export",
+        "type",
+        "interface",
+        "enum",
+        "class",
+        "if",
+        "if_else",
+        "else",
+        "return",
+        "function_param",
+        "arrow_function_param"
+    ]
+}
