@@ -1,10 +1,17 @@
+#![recursion_limit = "256"]
+
+
 [package]
 name = "cheetah"
 version = "0.1.0"
 edition = "2021"
 
+
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+[features]
+production = []
 
 
 [dependencies]
@@ -12,3 +19,4 @@ wasm-bindgen = "0.2"
 serde = { version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 uuid = { version = "1.12.0", features=["v4"] }
+lazy_static = "1.5.0"

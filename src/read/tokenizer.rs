@@ -5,45 +5,39 @@ use serde_json::Value;
 
 use crate::error::errors::Errors;
 
-#[derive(Copy, Clone)]
-pub enum Token {
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum Token {
     Identifier(Identifier),
-    Operator(Operator),
     Literal(Literal),
-    Punctuation(Punctuation),
 }
 
-pub trait TokenTrait {
-    fn tokenize(buffer: Vec<u8>) -> Result<Vec<Token>, Errors>;
-    fn set_possible_tokens_from_char(
-        current_chars: &mut Vec<CharType>,
+pub(crate) trait TokenTrait {
+    fn tokenize(buffer: &[u8]) -> Result<Vec<Token>, Errors>;
+    fn set_possible_tokens_from_u8(
+        current_bytes: &mut Vec<u8>,
         current_possible_tokens: &mut Vec<Token>,
-        ch: char,
+        byte: u8,
     );
-    fn get_next_possible_char_in_token_based_on_index(index: u8, token: &Token)
-        -> Option<CharType>;
+    fn get_next_possible_byte_in_token_based_on_index(index: u8, token: &Token) -> Option<u8>;
 
     fn to_string(self) -> String;
 }
 
 impl TokenTrait for Token {
-    fn tokenize(buffer: Vec<u8>) -> Result<Vec<Token>, Errors> {
+    fn tokenize(buffer: &[u8]) -> Result<Vec<Token>, Errors> {
         // Convert the buffer to a UTF-8 string slice
-        let decoded_str =
-            std::str::from_utf8(&buffer).map_err(|_| Errors::TokenError("Invalid UTF-8"))?;
-
         let mut state = TokenState {
-            current_chars: Vec::new(),
+            current_bytes: Vec::new(),
             current_possible_tokens: Vec::new(),
         };
 
         // Iterate over each character in the decoded string
-        for ch in decoded_str.chars() {
+        for byte in buffer {
             // Call the trait method
-            Self::set_possible_tokens_from_char(
-                &mut state.current_chars,
+            Self::set_possible_tokens_from_u8(
+                &mut state.current_bytes,
                 &mut state.current_possible_tokens,
-                ch,
+                byte,
             );
         }
 
@@ -51,34 +45,39 @@ impl TokenTrait for Token {
         Ok(state.current_possible_tokens) // Return actual result
     }
 
-    fn set_possible_tokens_from_char(
-        current_chars: &mut Vec<CharType>,
+    fn set_possible_tokens_from_u8(
+        current_bytes: &mut Vec<u8>,
         current_possible_tokens: &mut Vec<Token>,
-        character: char,
+        byte: u8,
     ) {
-        // HashMap to hold token names and the possible next char
-        let mut token_and_next_char: HashMap<String, CharType> = HashMap::new();
+        if current_possible_tokens.len() == 0 {}
 
         // Use retain to keep tokens that still have a valid next character
         current_possible_tokens.retain(|token| {
-            match Self::get_next_possible_char_in_token_based_on_index(
-                current_chars.len().try_into().unwrap(),
+            match Self::get_next_possible_byte_in_token_based_on_index(
+                current_bytes.len().try_into().unwrap(),
                 token,
             ) {
-                Some(next_char) => {
-                    // Insert the token's string representation and the next possible character
-                    token_and_next_char.insert(token.to_string(), next_char);
-                    true // Keep this token in the Vec
+                Some(next_byte) => {
+                    // If next_char and character are the same then we can keep it in our vec, otherwise remove
+                    next_byte == byte
                 }
                 None => false, // Remove this token from the Vec
             }
         });
     }
 
-    fn get_next_possible_char_in_token_based_on_index(
-        index: u8,
-        token: &Token,
-    ) -> Option<CharType> {
+    /**
+     *
+     * @args index: u8 - next index to check in token
+     * @args token: Option<&Token> - the token to get for
+     *
+     *
+     * @returns Option<u8>
+     * @returns u8 if it has another u8
+     * @returns None if it doesn't have any more char's
+     */
+    fn get_next_possible_byte_in_token_based_on_index(index: u8, token: &Token) -> Option<u8> {
         match token.get_value() {
             ValueType::Str(string_value) => {
                 if string_value.len() == index as usize {
@@ -91,10 +90,10 @@ impl TokenTrait for Token {
                 }
             }
             ValueType::U8(unsigned8) => {
-                if index > 1 {
+                if index > 0 {
                     None
                 } else {
-                    Some(CharType::U8(unsigned8)) // Return the unsigned 8-bit value wrapped in Some
+                    Some(unsigned8) // Return the unsigned 8-bit value wrapped in Some
                 }
             }
         }
@@ -109,38 +108,33 @@ impl TokenTrait for Token {
 }
 
 struct TokenState {
-    current_chars: Vec<CharType>, // changing based on iterations - value is the char
+    current_bytes: Vec<u8>, // changing based on iterations - value is the char
     current_possible_tokens: Vec<Token>, // possible tokens with that order of chars
 }
 
-trait SharedToken {
-    fn get_value(&self) -> ValueType;
+pub(crate) trait SharedToken {
+    fn get_value(&self) -> &[u8];
+    fn byte_at_index(&self) -> u8;
 }
 
 impl SharedToken for Token {
-    fn get_value(&self) -> ValueType {
+    fn get_value(&self) -> &[u8] {
         match self {
             Token::Identifier(identifier) => identifier.get_value(),
-            Token::Operator(operator) => operator.get_value(),
             Token::Literal(literal) => literal.get_value(),
-            Token::Punctuation(punctuation) => punctuation.get_value(),
+        }
+    }
+    fn byte_at_index(&self, index: u8) -> u8 {
+        match self {
+            Token::Identifier(identifier) => identifier.byte_at_index(index),
+            Token::Literal(literal) => literal.get_value(),
         }
     }
 }
 
-enum ValueType<'a> {
-    Str(&'a str),
-    U8(u8),
-}
-
-pub enum CharType {
-    Char(char),
-    U8(u8),
-}
-
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 #[allow(non_camel_case_types, unused)]
-enum Identifier {
+pub(crate) enum Identifier {
     BREAK,
     CASE,
     CATCH,
@@ -212,27 +206,9 @@ enum Identifier {
     SPECIAL_SET,
 }
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 #[allow(non_camel_case_types, unused)]
-enum Operator {
-    PLUS,
-    MINUS,
-    EQUAL,
-    ASTERISK,
-    SLASH,
-    GREATER_THAN,
-    LESS_THAN,
-    AMPERSAND,
-    PIPE,
-    CARET,
-    EXCLAMATION_MARK,
-    QUESTION_MARK,
-    PERCENT,
-}
-
-#[derive(PartialEq, Copy, Clone)]
-#[allow(non_camel_case_types, unused)]
-enum Literal {
+pub(crate) enum Literal {
     BACKSLASH,
     CARRIAGE_RETURN,
     LINE_FEED,
@@ -270,117 +246,78 @@ enum Literal {
     PERCENT,
 }
 
-#[derive(PartialEq, Copy, Clone)]
-#[allow(non_camel_case_types, unused)]
-enum Punctuation {
-    COMMA,
-    PERIOD,
-    SEMICOLON,
-    COLON,
-    OPEN_BRACKET_LEFT,
-    OPEN_BRACKET_RIGHT,
-    SQUARE_BRACKET_LEFT,
-    SQUARE_BRACKET_RIGHT,
-    CURLY_BRACKET_LEFT,
-    CURLY_BRACKET_RIGHT,
-    UNDERSCORE,
-    DOLLAR,
-    AT,
-    BACK_TICK,
-}
-
 impl SharedToken for Identifier {
-    fn get_value(&self) -> ValueType {
+    fn get_value(&self) -> &[u8] {
         match self {
-            Identifier::BREAK => ValueType::Str("break"),
-            Identifier::CASE => ValueType::Str("case"),
-            Identifier::CATCH => ValueType::Str("catch"),
-            Identifier::CLASS => ValueType::Str("class"),
-            Identifier::CONST => ValueType::Str("const"),
-            Identifier::CONTINUE => ValueType::Str("continue"),
-            Identifier::DEBUGGER => ValueType::Str("debugger"),
-            Identifier::DEFAULT => ValueType::Str("default"),
-            Identifier::DELETE => ValueType::Str("delete"),
-            Identifier::DO => ValueType::Str("do"),
-            Identifier::ELSE => ValueType::Str("else"),
-            Identifier::EXPORT => ValueType::Str("export"),
-            Identifier::EXTENDS => ValueType::Str("extends"),
-            Identifier::FALSE => ValueType::Str("false"),
-            Identifier::FINALLY => ValueType::Str("finally"),
-            Identifier::FOR => ValueType::Str("for"),
-            Identifier::FUNCTION => ValueType::Str("function"),
-            Identifier::IF => ValueType::Str("if"),
-            Identifier::IMPORT => ValueType::Str("import"),
-            Identifier::IN => ValueType::Str("in"),
-            Identifier::INSTANCEOF => ValueType::Str("instanceof"),
-            Identifier::NEW => ValueType::Str("new"),
-            Identifier::NULL => ValueType::Str("null"),
-            Identifier::RETURN => ValueType::Str("return"),
-            Identifier::SUPER => ValueType::Str("super"),
-            Identifier::SWITCH => ValueType::Str("switch"),
-            Identifier::THIS => ValueType::Str("this"),
-            Identifier::THROW => ValueType::Str("throw"),
-            Identifier::TRUE => ValueType::Str("true"),
-            Identifier::TRY => ValueType::Str("try"),
-            Identifier::TYPEOF => ValueType::Str("typeof"),
-            Identifier::VAR => ValueType::Str("var"),
-            Identifier::VOID => ValueType::Str("void"),
-            Identifier::WHILE => ValueType::Str("while"),
-            Identifier::WITH => ValueType::Str("with"),
-            Identifier::STRICT_LET => ValueType::Str("let"),
-            Identifier::STRICT_STATIC => ValueType::Str("static"),
-            Identifier::STRICT_YIELD => ValueType::Str("yield"),
-            Identifier::STRICT_IMPLEMENTS => ValueType::Str("implements"),
-            Identifier::STRICT_INTERFACE => ValueType::Str("interface"),
-            Identifier::STRICT_PACKAGE => ValueType::Str("package"),
-            Identifier::STRICT_PRIVATE => ValueType::Str("private"),
-            Identifier::STRICT_PROTECTED => ValueType::Str("protected"),
-            Identifier::STRICT_PUBLIC => ValueType::Str("public"),
-            Identifier::MODULE_ASYNC => ValueType::Str("async"),
-            Identifier::FUTURE_ENUM => ValueType::Str("enum"),
-            Identifier::FUTURE_OLD_ABSTRACT => ValueType::Str("abstract"),
-            Identifier::FUTURE_OLD_BOOLEAN => ValueType::Str("boolean"),
-            Identifier::FUTURE_OLD_BYTE => ValueType::Str("byte"),
-            Identifier::FUTURE_OLD_CHAR => ValueType::Str("char"),
-            Identifier::FUTURE_OLD_DOUBLE => ValueType::Str("double"),
-            Identifier::FUTURE_OLD_FINAL => ValueType::Str("final"),
-            Identifier::FUTURE_OLD_FLOAT => ValueType::Str("float"),
-            Identifier::FUTURE_OLD_GOTO => ValueType::Str("goto"),
-            Identifier::FUTURE_OLD_INT => ValueType::Str("int"),
-            Identifier::FUTURE_OLD_LONG => ValueType::Str("long"),
-            Identifier::FUTURE_OLD_NATIVE => ValueType::Str("native"),
-            Identifier::FUTURE_OLD_SHORT => ValueType::Str("short"),
-            Identifier::FUTURE_OLD_SYNCHRONIZED => ValueType::Str("synchronized"),
-            Identifier::FUTURE_OLD_THROWS => ValueType::Str("throws"),
-            Identifier::FUTURE_OLD_TRANSIENT => ValueType::Str("transient"),
-            Identifier::FUTURE_OLD_VOLATILE => ValueType::Str("volatile"),
-            Identifier::SPECIAL_STRICT_ARGUMENTS => ValueType::Str("arguments"),
-            Identifier::SPECIAL_AS => ValueType::Str("as"),
-            Identifier::SPECIAL_STRICT_EVAL => ValueType::Str("eval"),
-            Identifier::SPECIAL_FROM => ValueType::Str("from"),
-            Identifier::SPECIAL_GET => ValueType::Str("get"),
-            Identifier::SPECIAL_OF => ValueType::Str("of"),
-            Identifier::SPECIAL_SET => ValueType::Str("set"),
-        }
-    }
-}
-
-impl SharedToken for Operator {
-    fn get_value(&self) -> ValueType {
-        match self {
-            Operator::PLUS => ValueType::U8(0x2B),
-            Operator::MINUS => ValueType::U8(0x2D),
-            Operator::EQUAL => ValueType::U8(0x3D),
-            Operator::ASTERISK => ValueType::U8(0x2A),
-            Operator::SLASH => ValueType::U8(0x2F),
-            Operator::GREATER_THAN => ValueType::U8(0x3E),
-            Operator::LESS_THAN => ValueType::U8(0x3C),
-            Operator::AMPERSAND => ValueType::U8(0x26),
-            Operator::PIPE => ValueType::U8(0x7C),
-            Operator::CARET => ValueType::U8(0x5E),
-            Operator::EXCLAMATION_MARK => ValueType::U8(0x21),
-            Operator::QUESTION_MARK => ValueType::U8(0x3F),
-            Operator::PERCENT => ValueType::U8(0x25),
+            Identifier::BREAK => b"break",
+            Identifier::CASE => b"case",
+            Identifier::CATCH => b"catch",
+            Identifier::CLASS => b"class",
+            Identifier::CONST => b"const",
+            Identifier::CONTINUE => b"continue",
+            Identifier::DEBUGGER => b"debugger",
+            Identifier::DEFAULT => b"default",
+            Identifier::DELETE => b"delete",
+            Identifier::DO => b"do",
+            Identifier::ELSE => b"else",
+            Identifier::EXPORT => b"export",
+            Identifier::EXTENDS => b"extends",
+            Identifier::FALSE => b"false",
+            Identifier::FINALLY => b"finally",
+            Identifier::FOR => b"for",
+            Identifier::FUNCTION => b"function",
+            Identifier::IF => b"if",
+            Identifier::IMPORT => b"import",
+            Identifier::IN => b"in",
+            Identifier::INSTANCEOF => b"instanceof",
+            Identifier::NEW => b"new",
+            Identifier::NULL => b"null",
+            Identifier::RETURN => b"return",
+            Identifier::SUPER => b"super",
+            Identifier::SWITCH => b"switch",
+            Identifier::THIS => b"this",
+            Identifier::THROW => b"throw",
+            Identifier::TRUE => b"true",
+            Identifier::TRY => b"try",
+            Identifier::TYPEOF => b"typeof",
+            Identifier::VAR => b"var",
+            Identifier::VOID => b"void",
+            Identifier::WHILE => b"while",
+            Identifier::WITH => b"with",
+            Identifier::STRICT_LET => b"let",
+            Identifier::STRICT_STATIC => b"static",
+            Identifier::STRICT_YIELD => b"yield",
+            Identifier::STRICT_IMPLEMENTS => b"implements",
+            Identifier::STRICT_INTERFACE => b"interface",
+            Identifier::STRICT_PACKAGE => b"package",
+            Identifier::STRICT_PRIVATE => b"private",
+            Identifier::STRICT_PROTECTED => b"protected",
+            Identifier::STRICT_PUBLIC => b"public",
+            Identifier::MODULE_ASYNC => b"async",
+            Identifier::FUTURE_ENUM => b"enum",
+            Identifier::FUTURE_OLD_ABSTRACT => b"abstract",
+            Identifier::FUTURE_OLD_BOOLEAN => b"boolean",
+            Identifier::FUTURE_OLD_BYTE => b"byte",
+            Identifier::FUTURE_OLD_CHAR => b"char",
+            Identifier::FUTURE_OLD_DOUBLE => b"double",
+            Identifier::FUTURE_OLD_FINAL => b"final",
+            Identifier::FUTURE_OLD_FLOAT => b"float",
+            Identifier::FUTURE_OLD_GOTO => b"goto",
+            Identifier::FUTURE_OLD_INT => b"int",
+            Identifier::FUTURE_OLD_LONG => b"long",
+            Identifier::FUTURE_OLD_NATIVE => b"native",
+            Identifier::FUTURE_OLD_SHORT => b"short",
+            Identifier::FUTURE_OLD_SYNCHRONIZED => b"synchronized",
+            Identifier::FUTURE_OLD_THROWS => b"throws",
+            Identifier::FUTURE_OLD_TRANSIENT => b"transient",
+            Identifier::FUTURE_OLD_VOLATILE => b"volatile",
+            Identifier::SPECIAL_STRICT_ARGUMENTS => b"arguments",
+            Identifier::SPECIAL_AS => b"as",
+            Identifier::SPECIAL_STRICT_EVAL => b"eval",
+            Identifier::SPECIAL_FROM => b"from",
+            Identifier::SPECIAL_GET => b"get",
+            Identifier::SPECIAL_OF => b"of",
+            Identifier::SPECIAL_SET => b"set",
         }
     }
 }
@@ -423,27 +360,6 @@ impl SharedToken for Literal {
             Literal::AT => ValueType::U8(0x40),
             Literal::UNDERSCORE => ValueType::U8(0x5F),
             Literal::PERCENT => ValueType::U8(0x25),
-        }
-    }
-}
-
-impl SharedToken for Punctuation {
-    fn get_value(&self) -> ValueType {
-        match self {
-            Punctuation::COMMA => ValueType::U8(0x2C),
-            Punctuation::PERIOD => ValueType::U8(0x2E),
-            Punctuation::SEMICOLON => ValueType::U8(0x3B),
-            Punctuation::COLON => ValueType::U8(0x3A),
-            Punctuation::OPEN_BRACKET_LEFT => ValueType::U8(0x28),
-            Punctuation::OPEN_BRACKET_RIGHT => ValueType::U8(0x29),
-            Punctuation::SQUARE_BRACKET_LEFT => ValueType::U8(0x5B),
-            Punctuation::SQUARE_BRACKET_RIGHT => ValueType::U8(0x5D),
-            Punctuation::CURLY_BRACKET_LEFT => ValueType::U8(0x7B),
-            Punctuation::CURLY_BRACKET_RIGHT => ValueType::U8(0x7D),
-            Punctuation::UNDERSCORE => ValueType::U8(0x5F),
-            Punctuation::DOLLAR => ValueType::U8(0x24),
-            Punctuation::AT => ValueType::U8(0x40),
-            Punctuation::BACK_TICK => ValueType::U8(0x60),
         }
     }
 }
